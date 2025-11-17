@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CrioFan Control PRO</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons CDN (Versión UMD que SÍ funciona) -->
+    <script src="https://unpkg.com/lucide@0.395.0/dist/umd/lucide.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        
+        html, body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* No permitir scroll en la página principal */
+            touch-action: none;
+        }
+
+        /* --- Contenedor de la App (Simula un Teléfono) --- */
+        /* ESTO ARREGLA EL PROBLEMA DE LA PC */
+        #app-shell {
+            width: auto;
+            height: 90vh; /* Ocupa el 90% del alto de la ventana */
+            max-height: 900px; /* Límite máximo */
+            
+            aspect-ratio: 9 / 19.5; /* Fuerza la forma de un iPhone */
+            max-width: 430px; /* Límite de ancho */
+
+            overflow: hidden; /* No permitir scroll interno */
+            position: relative;
+            border-radius: 40px; /* Bordes de teléfono */
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* --- Estilo de Tarjeta "Vidrio Esmerilado" (Frosted Glass) --- */
+        .glass-card {
+            background-color: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            transition: all 0.3s ease;
+        }
+        
+        /* --- Estilo del Toggle Switch (iOS Light) --- */
+        .toggle-track {
+            background-color: #E5E7EB;
+            transition: background-color 0.3s ease;
+        }
+        .toggle-circle {
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transform: translateX(0.125rem);
+            transition: transform 0.3s ease;
+        }
+        .toggle-checkbox:checked + .toggle-track {
+            background-color: #3B82F6;
+        }
+        .toggle-checkbox:checked + .toggle-track .toggle-circle {
+            transform: translateX(1.875rem);
+        }
+        
+        /* --- Estilo del Deslizador Vertical --- */
+        .slider-track {
+            background-color: #E5E7EB;
+            overflow: hidden;
+        }
+        #slider-thumb {
+            position: absolute;
+            left: 0;
+            right: 0;
+            margin-left: auto;
+            margin-right: auto;
+            pointer-events: none;
+        }
+        
+        /* --- Botones de Modo (Segmented Control) --- */
+        .mode-btn {
+            background-color: transparent;
+            color: #4B5563;
+            transition: all 0.3s ease;
+        }
+        .mode-btn.active {
+            background-color: white;
+            color: #1F2937;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .no-select {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        /* Ocultar scrollbar de la columna de controles */
+        #controls-column::-webkit-scrollbar {
+            display: none;
+        }
+        #controls-column {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+            /* Esta columna SÍ puede tener scroll, pero no afectará la app principal */
+            overflow-y: auto;
+        }
+
+        /* Animación de Pulso para Modo Smart */
+        @keyframes smartPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.9; }
+        }
+        .smart-pulse {
+            animation: smartPulse 2s infinite ease-in-out;
+        }
+
+        /* Transición de apagado y conexión */
+        .controls-disabled {
+            opacity: 0.6;
+            filter: blur(4px);
+            transition: all 0.5s ease;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="h-full bg-gradient-to-b from-blue-200 via-white to-blue-50 flex justify-center items-center p-4 no-select">
+
+    <!-- Contenedor Principal de la App (Simula un Teléfono) -->
+    <div id="app-shell" class="flex flex-col p-4 space-y-4">
+        
+        <!-- 1. Cabecera: Nombre y Batería -->
+        <header class="flex justify-between items-center px-4 pt-4">
+            <h1 class="text-3xl font-bold text-zinc-800">Crio<span class="text-blue-500">Fan</span></h1>
+            <div id="battery-status" class="flex items-center space-x-2 bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-full text-sm font-medium text-zinc-700 shadow-sm">
+                <span id="battery-level-text">100%</span>
+                <i id="battery-icon" data-lucide="battery-full" class="text-zinc-500"></i>
+            </div>
+        </header>
+
+        <!-- 2. Estado del Dispositivo (Con Toggle Apple) -->
+        <div class="glass-card rounded-3xl p-5 flex justify-between items-center shadow-lg mx-2">
+            <div>
+                <h2 class="text-zinc-500 text-sm font-medium">Dispositivo</h2>
+                <span id="device-status-text" class="text-xl font-semibold text-zinc-900">Conectando...</span>
+            </div>
+            <!-- Toggle de Encendido/Apagado -->
+            <label class="relative w-14 h-8 flex items-center cursor-pointer">
+                <input type="checkbox" id="power-toggle" class="toggle-checkbox absolute opacity-0 w-0 h-0">
+                <div class="toggle-track w-full h-full rounded-full flex items-center p-1">
+                    <div class="toggle-circle w-6 h-6 rounded-full"></div>
+                </div>
+            </label>
+        </div>
+
+        <!-- Contenedor Principal con Overlay de Apagado -->
+        <div id="main-controls-wrapper" class="flex-1 relative transition-all duration-500 controls-disabled">
+            
+            <!-- 3. Controles Principales (REORGANIZADO) -->
+            <main class="grid grid-cols-3 gap-4 h-full px-2">
+                
+                <!-- Columna Izquierda: Controles (Temp, Modo, Eco, Timer) -->
+                <!-- ESTA COLUMNA AHORA TIENE SCROLL INTERNO Y NO MUEVE LA APP -->
+                <div id="controls-column" class="col-span-2 flex flex-col space-y-4 h-full">
+                    
+                    <!-- Monitor de Temperatura -->
+                    <div class="glass-card rounded-3xl p-5 flex flex-col justify-between h-48 shadow-lg flex-shrink-0">
+                        <div class="flex items-center justify-between text-zinc-500">
+                            <span class="text-sm font-medium">Temp. Corporal</span>
+                            <i data-lucide="thermometer" class="w-5 h-5"></i>
+                        </div>
+                        <div class="text-center my-auto">
+                            <span id="current-temp" class="text-6xl font-bold text-zinc-800 transition-colors duration-500">37.0</span>
+                            <span class="text-3xl text-zinc-400 font-medium">&deg;C</span>
+                        </div>
+                        <div class="text-center">
+                            <span id="temp-trend" class="text-sm font-medium text-blue-500">Estable</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Modos (CON MODO SMART) -->
+                    <div class="glass-card rounded-3xl p-4 shadow-lg flex-shrink-0">
+                        <h3 class="text-sm font-medium text-zinc-500 px-1 mb-3">Modo</h3>
+                        <div class="flex justify-between bg-gray-100 rounded-full p-1">
+                            <button class="mode-btn active w-1/4 py-2 rounded-full flex justify-center items-center" data-mode="normal"><i data-lucide="user"></i></button>
+                            <button class="mode-btn w-1/4 py-2 rounded-full flex justify-center items-center" data-mode="rendimiento"><i data-lucide="zap"></i></button>
+                            <button class="mode-btn w-1/4 py-2 rounded-full flex justify-center items-center" data-mode="sueño"><i data-lucide="moon"></i></button>
+                            <button class="mode-btn w-1/4 py-2 rounded-full flex justify-center items-center" data-mode="smart"><i data-lucide="brain"></i></button>
+                        </div>
+                    </div>
+                    
+                    <!-- Ahorro de Batería -->
+                    <div class="glass-card rounded-3xl p-5 flex justify-between items-center shadow-lg flex-shrink-0">
+                        <div>
+                            <h3 class="text-sm font-medium text-zinc-900">Eco-Mode</h3>
+                            <span id="battery-saver-status" class="text-sm text-zinc-500">Optimiza energía</span>
+                        </div>
+                        <label class="relative w-14 h-8 flex items-center cursor-pointer">
+                            <input type="checkbox" id="eco-toggle" class="toggle-checkbox absolute opacity-0 w-0 h-0">
+                            <div class="toggle-track w-full h-full rounded-full flex items-center p-1">
+                                <div class="toggle-circle w-6 h-6 rounded-full"></div>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Temporizador (CON DISPLAY DE TIEMPO) -->
+                    <div class="glass-card rounded-3xl p-4 shadow-lg flex-shrink-0">
+                        <div class="flex justify-between items-center px-1 mb-3">
+                            <h3 class="text-sm font-medium text-zinc-500">Temporizador</h3>
+                            <span id="timer-display" class="text-xl font-semibold text-zinc-800">Off</span>
+                        </div>
+                        <div class="flex justify-between bg-gray-100 rounded-full p-1">
+                            <button class="mode-btn timer-btn active w-1/4 py-2 rounded-full text-xs" data-time="0">Off</button>
+                            <button class="mode-btn timer-btn w-1/4 py-2 rounded-full text-xs" data-time="30">30m</button>
+                            <button class="mode-btn timer-btn w-1/4 py-2 rounded-full text-xs" data-time="60">1h</button>
+                            <button class="mode-btn timer-btn w-1/4 py-2 rounded-full text-xs" data-time="120">2h</button>
+                        </div>
+                    </div>
+
+                </div>
+                
+                <!-- Columna Derecha: Control de Nivel de Frío (Protagonista) -->
+                <div class="col-span-1 glass-card rounded-3xl p-4 flex flex-col items-center justify-between h-full shadow-lg">
+                    <span id="slider-label" class="text-sm font-medium text-zinc-500">Nivel</span>
+                    
+                    <!-- Deslizador Vertical Interactivo -->
+                    <div id="vertical-slider" class="relative w-full h-full my-3 flex justify-center items-end cursor-pointer" touch-action="none">
+                        <!-- Track (El fondo del deslizador) -->
+                        <div class="slider-track absolute inset-x-0 bottom-0 h-full bg-gray-200 rounded-full"></div>
+                        
+                        <!-- Nivel (El relleno azul que cambia de altura) -->
+                        <div id="slider-level" class="relative w-full bg-blue-500 rounded-full" style="height: 0%; transition: height 0.1s ease;"></div>
+                        
+                        <!-- Icono y % (Se mueven con el nivel) -->
+                        <div id="slider-thumb" class="w-16 flex flex-col items-center text-center" style="bottom: 10px;">
+                            <div id="slider-icon-bg" class="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center mb-1 transition-transform duration-300">
+                                <i data-lucide="snowflake" class="w-6 h-6 text-blue-500"></i>
+                            </div>
+                            <span id="slider-percentage" class="text-lg font-bold text-zinc-800">0%</span>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Overlay de Apagado -->
+            <div id="power-off-overlay" class="absolute inset-0 bg-white/80 backdrop-blur-md rounded-3xl flex flex-col items-center justify-center text-zinc-500 text-lg font-medium transition-opacity duration-500 opacity-0 pointer-events-none z-50">
+                <i data-lucide="power-off" class="w-16 h-16 mb-4"></i>
+                <span>Dispositivo Apagado</span>
+            </div>
+        </div>
+        
+    </div>
+
+    <script>
+        // --- CrioFanApp (Módulo Principal) ---
+        // Toda la lógica está encapsulada aquí
+        const CrioFanApp = {
+            
+            // --- 1. Estado Simulado del Dispositivo ---
+            state: {
+                isConnected: false,
+                isPoweredOn: false,
+                currentTemp: 37.0,
+                targetLevel: 0,
+                isEcoMode: false,
+                batteryLevel: 100,
+                activeMode: 'normal',
+                timerMinutes: 0, // En minutos
+                timerTotalSeconds: 0, // En segundos, para la cuenta regresiva
+                isDragging: false,
+                ai: {
+                    reactionSpeed: 0.1,
+                    goalTemp: 36.5,
+                    slewRate: 10, // % por segundo
+                }
+            },
+
+            // --- 2. Referencias a Elementos del DOM ---
+            dom: {},
+
+            // --- 3. Inicialización ---
+            init() {
+                // Asignar elementos del DOM
+                this.dom = {
+                    appShell: document.getElementById('app-shell'),
+                    mainControls: document.getElementById('main-controls-wrapper'),
+                    powerToggle: document.getElementById('power-toggle'),
+                    powerOffOverlay: document.getElementById('power-off-overlay'),
+                    deviceStatusText: document.getElementById('device-status-text'),
+                    batteryLevelText: document.getElementById('battery-level-text'),
+                    batteryIcon: document.getElementById('battery-icon'),
+                    currentTemp: document.getElementById('current-temp'),
+                    tempTrend: document.getElementById('temp-trend'),
+                    ecoToggle: document.getElementById('eco-toggle'),
+                    slider: document.getElementById('vertical-slider'),
+                    sliderLabel: document.getElementById('slider-label'),
+                    sliderLevel: document.getElementById('slider-level'),
+                    sliderThumb: document.getElementById('slider-thumb'),
+                    sliderIconBg: document.getElementById('slider-icon-bg'),
+                    sliderPercentage: document.getElementById('slider-percentage'),
+                    modeButtons: document.querySelectorAll('.mode-btn:not(.timer-btn)'),
+                    timerButtons: document.querySelectorAll('.timer-btn'),
+                    timerDisplay: document.getElementById('timer-display'),
+                };
+
+                // Inicializar Iconos
+                lucide.createIcons();
+                
+                // Conectar Listeners
+                this.listeners.bind();
+
+                // Iniciar simulación de conexión
+                this.bluetooth.connect();
+            },
+
+            // --- 4. Módulo de "Conexión Bluetooth" (Simulado) ---
+            bluetooth: {
+                connect() {
+                    // FIX: 'this' se refería a 'bluetooth', no a 'CrioFanApp'.
+                    // Obtenemos la referencia principal de la app.
+                    const app = CrioFanApp; 
+                    
+                    console.log("Simulating Bluetooth connection...");
+                    // Usamos app.dom en lugar de this.dom
+                    app.dom.deviceStatusText.textContent = 'Conectando...';
+                    
+                    setTimeout(() => {
+                        console.log("Bluetooth Connected.");
+                        // Usamos app.state y app.dom
+                        app.state.isConnected = true;
+                        app.state.isPoweredOn = true; // Encender al conectar
+                        app.dom.deviceStatusText.textContent = 'Conectado';
+                        app.dom.mainControls.classList.remove('controls-disabled');
+                        
+                        // Iniciar el loop de simulación SOLO después de conectar
+                        // Usamos app.simulation
+                        app.simulation.start();
+                        
+                        try {
+                            if (navigator.vibrate) navigator.vibrate(100);
+                        } catch (e) {}
+                    }, 2500); // Simular 2.5 segundos de conexión
+                }
+            },
+
+            // --- 5. Módulo de Listeners (Eventos) ---
+            listeners: {
+                bind() {
+                    // FIX: Usar 'app' para referenciar CrioFanApp
+                    const app = CrioFanApp;
+
+                    // --- Slider (Mouse) ---
+                    app.dom.slider.addEventListener('mousedown', (e) => {
+                        if (!app.state.isPoweredOn || app.state.activeMode === 'smart') return;
+                        app.state.isDragging = true;
+                        app.dom.slider.classList.add('cursor-grabbing');
+                        app.dom.sliderIconBg.style.transform = 'scale(1.1)';
+                        app.ui.handleSliderMove(e);
+                    });
+                    window.addEventListener('mousemove', (e) => app.ui.handleSliderMove(e));
+                    window.addEventListener('mouseup', () => {
+                        app.state.isDragging = false;
+                        app.dom.slider.classList.remove('cursor-grabbing');
+                        app.dom.sliderIconBg.style.transform = 'scale(1)';
+                    });
+
+                    // --- Slider (Táctil) ---
+                    app.dom.slider.addEventListener('touchstart', (e) => {
+                        if (!app.state.isPoweredOn || app.state.activeMode === 'smart') return;
+                        app.state.isDragging = true;
+                        app.dom.sliderIconBg.style.transform = 'scale(1.1)';
+                        app.ui.handleSliderMove(e);
+                    }, { passive: false });
+                    window.addEventListener('touchmove', (e) => app.ui.handleSliderMove(e), { passive: false });
+                    window.addEventListener('touchend', () => {
+                        app.state.isDragging = false;
+                        app.dom.sliderIconBg.style.transform = 'scale(1)';
+                    });
+
+                    // --- Controles ---
+                    app.dom.powerToggle.addEventListener('change', () => {
+                        if (!app.state.isConnected) return;
+                        app.state.isPoweredOn = app.dom.powerToggle.checked;
+                        try {
+                            if (navigator.vibrate) navigator.vibrate(50);
+                        } catch (e) {}
+                    });
+
+                    app.dom.ecoToggle.addEventListener('change', () => {
+                        if (!app.state.isPoweredOn) {
+                            app.dom.ecoToggle.checked = false;
+                            return;
+                        }
+                        app.state.isEcoMode = app.dom.ecoToggle.checked;
+                        try {
+                            if (navigator.vibrate) navigator.vibrate(50);
+                        } catch (e) {}
+                    });
+
+                    app.dom.modeButtons.forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            if (!app.state.isPoweredOn) return;
+                            app.state.activeMode = btn.dataset.mode;
+                            try {
+                                if (navigator.vibrate) navigator.vibrate(50);
+                            } catch (e) {}
+                        });
+                    });
+                    
+                    app.dom.timerButtons.forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            if (!app.state.isPoweredOn) return;
+                            // FIX: La lógica del temporizador se resetea aquí
+                            const minutes = parseInt(btn.dataset.time);
+                            app.state.timerMinutes = minutes;
+                            app.state.timerTotalSeconds = minutes * 60; // Actualizar el total de segundos
+                            try {
+                                if (navigator.vibrate) navigator.vibrate(50);
+                            } catch (e) {}
+                        });
+                    });
+                }
+            },
+
+            // --- 6. Módulo de UI (Renderizado) ---
+            ui: {
+                handleSliderMove(e) {
+                    // FIX: Usar 'app' para referenciar CrioFanApp
+                    const app = CrioFanApp;
+                    if (!app.state.isDragging || !app.state.isPoweredOn || app.state.activeMode === 'smart') return;
+                    
+                    e.preventDefault();
+                    const clientY = e.clientY || e.touches[0].clientY;
+                    const rect = app.dom.slider.getBoundingClientRect();
+                    
+                    let level = (rect.bottom - clientY) / rect.height;
+                    level = Math.max(0, Math.min(1, level));
+                    
+                    app.state.targetLevel = Math.round(level * 100);
+                },
+
+                update() {
+                    // FIX: Usar 'app' para referenciar CrioFanApp
+                    const app = CrioFanApp;
+                    const { state, dom } = app;
+
+                    if (!state.isConnected) return;
+                    
+                    const isOn = state.isPoweredOn;
+                    dom.powerOffOverlay.style.opacity = isOn ? '0' : '1';
+                    dom.powerOffOverlay.style.pointerEvents = isOn ? 'none' : 'auto';
+                    dom.mainControls.classList.toggle('controls-disabled', !isOn);
+                    dom.deviceStatusText.textContent = isOn ? 'Conectado' : 'Apagado';
+                    dom.powerToggle.checked = isOn;
+
+                    const level = Math.round(state.targetLevel);
+                    
+                    if (state.activeMode === 'smart') {
+                        dom.sliderLevel.style.height = `${level}%`;
+                        dom.sliderPercentage.textContent = 'Auto';
+                        dom.sliderIconBg.classList.add('smart-pulse');
+                        dom.sliderLabel.textContent = 'Smart';
+                        dom.slider.style.opacity = '0.7';
+                    } else {
+                        dom.sliderLevel.style.height = `${level}%`;
+                        dom.sliderPercentage.textContent = `${level}%`;
+                        dom.sliderIconBg.classList.remove('smart-pulse');
+                        dom.sliderLabel.textContent = 'Nivel';
+                        dom.slider.style.opacity = '1';
+                    }
+                    
+                    const sliderHeight = dom.slider.clientHeight;
+                    const thumbHeight = dom.sliderThumb.clientHeight;
+                    let thumbBottom = (sliderHeight * (level / 100)) - (thumbHeight / 2);
+                    thumbBottom = Math.max(10, Math.min(thumbBottom, sliderHeight - thumbHeight - 10));
+                    dom.sliderThumb.style.bottom = `${thumbBottom}px`;
+
+                    const battery = Math.floor(state.batteryLevel);
+                    dom.batteryLevelText.textContent = `${battery}%`;
+                    
+                    const batteryIconEl = dom.batteryIcon.querySelector('svg');
+                    let newIconName = 'battery-full';
+                    dom.batteryLevelText.classList.remove('text-red-500');
+                    if (battery <= 20) {
+                        newIconName = 'battery-low';
+                        dom.batteryLevelText.classList.add('text-red-500');
+                    } else if (battery <= 50) {
+                        newIconName = 'battery-medium';
+                    }
+                    
+                    if (batteryIconEl && batteryIconEl.dataset.lucide !== newIconName) {
+                        if (batteryIconEl) batteryIconEl.remove();
+                        dom.batteryIcon.innerHTML = lucide.createIcon(newIconName).outerHTML;
+                    }
+
+                    dom.ecoToggle.checked = state.isEcoMode;
+
+                    dom.currentTemp.textContent = state.currentTemp.toFixed(1);
+                    dom.currentTemp.classList.remove('text-red-500', 'text-blue-500');
+                    if(state.currentTemp > 37.2) dom.currentTemp.classList.add('text-red-500');
+                    if(state.currentTemp < 36.0) dom.currentTemp.classList.add('text-blue-500');
+
+                    dom.modeButtons.forEach(btn => {
+                        btn.classList.toggle('active', btn.dataset.mode === state.activeMode);
+                    });
+                    dom.timerButtons.forEach(btn => {
+                        btn.classList.toggle('active', parseInt(btn.dataset.time) === state.timerMinutes);
+                    });
+
+                    // G. Display del Temporizador (¡NUEVO!)
+                    if (state.timerTotalSeconds > 0) {
+                        const mins = Math.floor(state.timerTotalSeconds / 60);
+                        const secs = Math.floor(state.timerTotalSeconds % 60);
+                        dom.timerDisplay.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+                    } else {
+                        dom.timerDisplay.textContent = 'Off';
+                    }
+                }
+            },
+
+            // --- 7. Módulo de Simulación ("El Motor") ---
+            simulation: {
+                lastTick: Date.now(),
+                
+                start() {
+                    this.lastTick = Date.now();
+                    // FIX: Referenciar el loop correctamente
+                    requestAnimationFrame(() => CrioFanApp.simulation.loop());
+                },
+
+                loop() {
+                    // FIX: Usar 'app' para referenciar CrioFanApp
+                    const app = CrioFanApp;
+                    const { state, dom } = app;
+
+                    const now = Date.now();
+                    const delta = (now - this.lastTick) / 1000; // segundos
+                    this.lastTick = now;
+                    
+                    if (!state.isConnected) return;
+
+                    if (!state.isPoweredOn) {
+                        // --- Apagado ---
+                        state.batteryLevel -= (0.005 * delta);
+                        let tempChange = (37.0 - state.currentTemp) * 0.01;
+                        state.currentTemp += tempChange * delta * 20;
+                        dom.tempTrend.textContent = 'Apagado';
+                        dom.tempTrend.classList.remove('text-blue-500', 'text-red-500');
+
+                    } else {
+                        // --- Encendido ---
+                        
+                        // 1. Correr la IA
+                        app.smartAI.think(delta);
+                        
+                        // 2. Simular Temperatura
+                        let targetBodyTemp = 37.0;
+                        const tempRange = 11.0; 
+
+                        if (state.activeMode === 'smart') {
+                            targetBodyTemp = state.ai.goalTemp;
+                        } else {
+                            targetBodyTemp = 37.0 - ( (state.targetLevel / 100) * tempRange );
+                            if (state.activeMode === 'sueño') {
+                                targetBodyTemp = 37.0 - ( (state.targetLevel / 100) * (tempRange * 0.6) );
+                            }
+                        }
+                        
+                        let tempDifference = targetBodyTemp - state.currentTemp;
+                        state.currentTemp += (tempDifference * 0.1) * delta;
+                        
+                        // Actualizar tendencia
+                        if (state.activeMode === 'smart') {
+                             dom.tempTrend.textContent = 'Smart Ajustando...';
+                        } else if (tempDifference < -0.05) {
+                            dom.tempTrend.textContent = 'Enfriando...';
+                            dom.tempTrend.classList.add('text-blue-500');
+                            dom.tempTrend.classList.remove('text-red-500');
+                        } else if (tempDifference > 0.05) {
+                            dom.tempTrend.textContent = 'Calentando...';
+                            dom.tempTrend.classList.add('text-red-500');
+                            dom.tempTrend.classList.remove('text-blue-500');
+                        } else {
+                            dom.tempTrend.textContent = 'Estable';
+                            dom.tempTrend.classList.remove('text-blue-500', 'text-red-500');
+                        }
+
+                        // 3. Simular Batería
+                        let batteryDrain = 0.01;
+                        batteryDrain += (state.targetLevel / 100) * 0.05;
+                        if (state.activeMode === 'rendimiento') batteryDrain *= 1.5;
+                        if (state.activeMode === 'sueño') batteryDrain *= 0.5;
+                        if (state.isEcoMode) batteryDrain *= 0.6;
+                        state.batteryLevel -= (batteryDrain * delta);
+                        
+                        // 4. Simular Temporizador (FIXED)
+                        if (state.timerTotalSeconds > 0) {
+                            state.timerTotalSeconds -= delta;
+                            if (state.timerTotalSeconds <= 0) {
+                                state.timerTotalSeconds = 0;
+                                state.timerMinutes = 0; // Sincronizar
+                                state.isPoweredOn = false;
+                            }
+                        } else {
+                            // Asegurarse de que el estado base (minutos) sea 0 si los segundos son 0
+                            state.timerMinutes = 0;
+                        }
+                    }
+                    
+                    // Limitar valores
+                    state.batteryLevel = Math.max(0, state.batteryLevel);
+                    state.currentTemp = Math.max(26.0, Math.min(38.0, state.currentTemp));
+                    
+                    if (state.batteryLevel === 0 && state.isPoweredOn) {
+                        state.isPoweredOn = false;
+                    }
+
+                    // Actualizar la UI
+                    app.ui.update();
+                    
+                    // Siguiente frame
+                    requestAnimationFrame(() => app.simulation.loop());
+                }
+            },
+
+            // --- 8. Módulo de "Smart AI" (¡NUEVO!) ---
+            smartAI: {
+                think(delta) {
+                    // FIX: Usar 'app' para referenciar CrioFanApp
+                    const app = CrioFanApp;
+                    const { state } = app;
+
+                    if (state.activeMode !== 'smart') return;
+
+                    const tempError = state.ai.goalTemp - state.currentTemp;
+                    let adjustment = 0;
+
+                    if (tempError < -0.2) {
+                        adjustment = (Math.abs(tempError) * 10) * state.ai.reactionSpeed;
+                    } 
+                    else if (tempError > 0.2) {
+                        adjustment = -(Math.abs(tempError) * 10) * state.ai.reactionSpeed;
+                    }
+
+                    let newTarget = state.targetLevel + adjustment;
+                    
+                    if (newTarget > state.targetLevel) {
+                        state.targetLevel = Math.min(newTarget, state.targetLevel + state.ai.slewRate * delta);
+                    } else {
+                        state.targetLevel = Math.max(newTarget, state.targetLevel - state.ai.slewRate * delta);
+                    }
+
+                    state.targetLevel = Math.max(0, Math.min(100, state.targetLevel));
+                }
+            }
+        };
+
+        // --- Iniciar la Aplicación ---
+        CrioFanApp.init();
+
+    </script>
+</body>
+</html>
